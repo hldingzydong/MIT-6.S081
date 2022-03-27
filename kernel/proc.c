@@ -695,3 +695,20 @@ procdump(void)
     printf("\n");
   }
 }
+
+uint64
+procamount()
+{
+  uint64 amount = 0;
+  struct proc *p;
+  
+  for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state != UNUSED)
+      {
+        ++amount;
+      }
+      release(&p->lock);
+  }
+  return amount;
+}
