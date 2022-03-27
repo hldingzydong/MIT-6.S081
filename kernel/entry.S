@@ -7,9 +7,9 @@ _entry:
 	# set up a stack for C.
         # stack0 is declared in start.c,
         # with a 4096-byte stack per CPU.
-        # sp = stack0 + (hartid * 4096)
-        la sp, stack0
-        li a0, 1024*4
+        # sp = stack0 + (hartid * 4096), hartid means core number
+        la sp, stack0 # load address
+        li a0, 1024*4 # load immediate
 	csrr a1, mhartid
         addi a1, a1, 1
         mul a0, a0, a1

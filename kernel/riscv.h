@@ -3,6 +3,25 @@ static inline uint64
 r_mhartid()
 {
   uint64 x;
+  /*
+  asm asm-qualifiers ( AssemblerTemplate 
+                      : OutputOperands
+                      : InputOperands
+                      : Clobbers
+                      : GotoLabels)
+
+  OutputOperands:
+  [ [asmSymbolicName] ] constraint (cvariablename)
+
+
+  constraint:
+  prefix:
+  =: a variable overwriting an existing value
+  +: when reading and writing
+
+  ‘r’ for register 
+  ‘m’ for memory
+  */
   asm volatile("csrr %0, mhartid" : "=r" (x) );
   return x;
 }
