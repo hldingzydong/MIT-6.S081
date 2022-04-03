@@ -30,13 +30,15 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
       char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
+      if(pa == 0){
+        freeproc(p);
+        release(&p->lock);
+        return;
+      }
       uint64 va = KSTACK((int) (p - proc));
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
@@ -121,6 +123,9 @@ found:
     return 0;
   }
 
+  p->kpagetable = pkpagetablecreate();
+  pkvmmap(p->kpagetable, p->kstack, kvmpa(p->kstack), PGSIZE, PTE_R | PTE_W);
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -141,6 +146,8 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->kpagetable)
+    proc_freekpagetable(p->kpagetable); 
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -193,6 +200,30 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
+}
+
+void
+proc_freekpagetable(pagetable_t pagetable)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) == 1){
+      // this PTE points to a lower-level page table.
+      pagetable_t child = (pagetable_t)PTE2PA(pte);
+      for(int j = 0; j < 512; j++){
+        pte_t sec_pte = child[j];
+        if((sec_pte & PTE_V) == 1) {
+            uint64 grandchild = PTE2PA(sec_pte);
+            kfree((void*)grandchild);
+        }
+        child[j] = 0;
+      }
+      kfree((void*)child);
+      pagetable[i] = 0;
+    }
+  }
+  kfree((void*)pagetable);
 }
 
 // a user program that calls exec("/init")
@@ -473,6 +504,10 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        // Use running process kernel page table
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -485,6 +520,8 @@ scheduler(void)
     }
 #if !defined (LAB_FS)
     if(found == 0) {
+      // when no process running, kernel should use kernel_pagetable
+      kvminithart();
       intr_on();
       asm volatile("wfi");
     }
