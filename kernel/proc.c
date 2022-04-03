@@ -514,14 +514,15 @@ scheduler(void)
         // It should have changed its p->state before coming back.
         c->proc = 0;
 
+        // when no process running, kernel should use kernel_pagetable
+        kvminithart();
+
         found = 1;
       }
       release(&p->lock);
     }
 #if !defined (LAB_FS)
     if(found == 0) {
-      // when no process running, kernel should use kernel_pagetable
-      kvminithart();
       intr_on();
       asm volatile("wfi");
     }
