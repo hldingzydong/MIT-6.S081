@@ -420,6 +420,8 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+  return copyin_new(pagetable, dst, srcva, len);
+/*
   uint64 n, va0, pa0;
 
   while(len > 0){
@@ -437,6 +439,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     srcva = va0 + PGSIZE;
   }
   return 0;
+*/
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -446,6 +449,8 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
+  return copyinstr_new(pagetable, dst, srcva, max);
+/*
   uint64 n, va0, pa0;
   int got_null = 0;
 
@@ -480,6 +485,7 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+*/
 }
 
 void
@@ -513,5 +519,50 @@ vmprint(pagetable_t pagetable)
         printf(".. .. ..%d: pte %p pa %p\n", k, level2_pte, pa);
       }
     }
+  }
+}
+
+void
+upagetabletopkpagetable(int pid, pagetable_t upagetable, pagetable_t pkpagetable, 
+    uint64 newsz, uint64 oldsz)
+{
+  uint64 va;
+  pte_t * userpte;
+  pte_t * pkpte;
+
+  if(newsz >= PLIC)
+  {
+    panic("user process memory cannot larger than PLIC");
+  }
+
+  for(va = oldsz; va < newsz; va += PGSIZE)
+  {
+    userpte = walk(upagetable, va, 0);
+    if(userpte == 0)
+    {
+      printf("[%d] Nonexist user pte for va=%p\n", pid, va);
+      panic("Nonexist user pte");
+    }
+    if((*userpte & PTE_V) == 0)
+    {
+      printf("[%d] Invalid user pte for va=%p\n", pid, va);
+      panic("Invalid user pte");
+    }
+
+    pkpte = walk(pkpagetable, va, 1);
+    if(pkpte == 0)
+    {
+      printf("[%d] Nonexist process kernel pte for va=%p\n", pid, va);
+      panic("Nonexist process kernel pte");
+    }
+
+    *pkpte = *userpte;
+    *pkpte &= (~(PTE_W | PTE_X | PTE_U));
+  }
+
+  for(va = newsz; va < oldsz; va += PGSIZE)
+  {
+    pkpte = walk(pkpagetable, va, 1);
+    *pkpte &= (~PTE_V);
   }
 }
