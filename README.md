@@ -21,3 +21,42 @@ b _entry
 ## [Extended Asm - Assembler Instructions with C Expression Operands](https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html)
 1. [Output Operands](https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html#OutputOperands)
 2. [Input Operands](https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html#InputOperands)
+
+## GDB
+1. Steps:
+```
+n
+s
+si
+finish
+```
+2. Breakpoints:
+```
+b myproc
+delete
+``` 
+3. Layout:
+```
+layout src
+layout asm
+layout split
+
+focus src
+```
+4. Stack:
+```
+backtrace
+info frame
+frame 0
+where
+```
+5. Print values:
+```
+print p
+print *p
+info locals
+```
+6. Registers:
+```
+info registers
+```
