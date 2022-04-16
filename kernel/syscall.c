@@ -144,3 +144,19 @@ syscall(void)
     p->trapframe->a0 = -1;
   }
 }
+
+// print saved return address in each stack
+void
+backtrace(void)
+{
+  uint64 fp = r_fp();
+  uint64 ra = 0;
+  uint64 termial = PGROUNDUP(fp);
+
+  while(fp < termial)
+  {
+    ra = *(uint64*)(fp - 8);
+    printf("%p\n", (void*)ra);
+    fp = *(uint64*)(fp - 16);
+  }
+}
