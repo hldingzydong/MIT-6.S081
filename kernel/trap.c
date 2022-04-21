@@ -92,7 +92,7 @@ usertrap(void)
             p->killed = 1;
           } else {
             memset(mem, 0, PGSIZE);
-            uvmunmap(p->pagetable, va, PGSIZE, 1); // uminstall previous map from page table
+            uvmunmap(p->pagetable, va, 1, 1); // uminstall previous map from page table
             if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
               kfree(mem);
               p->killed = 1;

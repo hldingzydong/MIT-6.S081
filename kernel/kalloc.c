@@ -50,8 +50,11 @@ kfree(void *pa)
 {
   struct run *r;
 
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP) {
+    // backtrace();
+    // printf("pa:%p\n", pa);
     panic("kfree");
+  }
 
   uint64 index = (uint64)pa / PGSIZE;
 
