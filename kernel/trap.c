@@ -11,6 +11,8 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
+extern uint32 pagerefcount[];
+
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
@@ -50,7 +52,8 @@ usertrap(void)
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  uint64 scause = r_scause();
+  if(scause == 8){
     // system call
 
     if(p->killed)
@@ -67,8 +70,41 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(/*scause == 13 ||*/ scause == 15) { // 13-Load page fault, 15-Store/AMO page fault
+    uint64 stval = r_stval();
+    if (stval >= p->sz) {
+      p->killed = 1;
+    } else {
+      uint64 va = PGROUNDDOWN(stval);
+      pte_t *pte = walk(p->pagetable, va, 0);
+      uint64 pa = PTE2PA(*pte);
+      if (pte && (*pte & PTE_COW)) {
+        if (pagerefcount[pa/PGSIZE] == 1) {
+          // now only curr proc use this page, could directly use it
+          // here just need to add per with W and clear COW
+          uint flags = PTE_FLAGS(*pte);
+          flags = flags | (~PTE_COW) | PTE_W;
+          updatepageperm(p->pagetable, va, PGSIZE, flags);
+        } else {
+          // allocate a new page
+          char *mem = kalloc();
+          if (mem == 0) {
+            p->killed = 1;
+          } else {
+            memset(mem, 0, PGSIZE);
+            uvmunmap(p->pagetable, va, PGSIZE, 1); // uminstall previous map from page table
+            if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+              kfree(mem);
+              p->killed = 1;
+            }
+          }
+        }
+      } else {
+        p->killed = 1;
+      }
+    }
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    printf("usertrap(): unexpected scause %p pid=%d\n", scause, p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }

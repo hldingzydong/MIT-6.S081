@@ -15,6 +15,7 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+extern uint32 pagerefcount[]; // kalloc.c
 /*
  * create a direct-map page table for the kernel.
  */
@@ -167,6 +168,26 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   return 0;
 }
 
+int
+updatepageperm(pagetable_t pagetable, uint64 va, uint64 size, int perm)
+{
+  uint64 a, last;
+  pte_t *pte;
+
+  a = PGROUNDDOWN(va);
+  last = PGROUNDDOWN(va + size - 1);
+  for(;;){
+    if((pte = walk(pagetable, a, 0)) == 0)
+      return -1;
+    *pte = PTE_CLEAR_FLAGS(*pte);
+    *pte = *pte | perm;
+    if(a == last)
+      break;
+    a += PGSIZE;
+  }
+  return 0;
+}
+
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
@@ -311,7 +332,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -320,12 +341,33 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+
+    // if((mem = kalloc()) == 0)
+    //  goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+
+    // increase page reference count
+    ++pagerefcount[(uint64)pa / PGSIZE];
+    // clear W, set R & COW
+    flags = (flags & (~PTE_W)) | PTE_R | PTE_COW;
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      // kfree(mem);
       goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+    }
+  }
+
+  // update parent page table permission
+  for(i = 0; i < sz; i += PGSIZE){
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    if((*pte & PTE_V) == 0)
+      panic("uvmcopy: page not present");
+    pa = PTE2PA(*pte);
+    flags = PTE_FLAGS(*pte);
+    // clear W, set R & COW
+    flags = (flags & (~PTE_W)) | PTE_R | PTE_COW;
+    if(updatepageperm(old, i, PGSIZE, flags) != 0) {
+       goto err;
     }
   }
   return 0;
