@@ -3,6 +3,8 @@
 #include "memlayout.h"
 #include "elf.h"
 #include "riscv.h"
+#include "spinlock.h"
+#include "proc.h"
 #include "defs.h"
 #include "fs.h"
 
@@ -358,6 +360,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     }
   }
 
+  if (pagerefcount[(uint64)pa / PGSIZE] > 2) {
+    return 0;
+  }
+
   // update parent page table permission
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -399,12 +405,51 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+  pte_t *pte;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
+    if(va0 >= MAXVA)
+      return -1;
+
+    pte = walk(pagetable, va0, 0);
+    if(pte == 0)
+      return -1;
+    if((*pte & PTE_V) == 0)
+      return -1;
+    if((*pte & PTE_U) == 0)
+      return -1;
+
+    pa0 = PTE2PA(*pte);
     if(pa0 == 0)
       return -1;
+
+    if (*pte & PTE_COW) {
+      if (pagerefcount[pa0/PGSIZE] == 1) {
+        // now only curr proc use this page, could directly use it
+        // here just need to add per with W and clear COW
+        uint flags = PTE_FLAGS(*pte);
+        flags = (flags & (~PTE_COW)) | PTE_W;
+        updatepageperm(pagetable, va0, PGSIZE, flags);
+      } else {
+        // allocate a new page
+        char *mem = kalloc();
+        if (mem == 0) {
+          // exit(-1); // kill process?
+          return -1;
+        } else {
+          // memset(mem, 0, PGSIZE);
+          uvmunmap(pagetable, va0, 1, 1); // uminstall previous map from page table
+          memmove(mem, (char*)pa0, PGSIZE);
+          if(mappages(pagetable, va0, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+            kfree(mem);
+            return -1;
+          }
+          pa0 = (uint64)mem;
+        }
+      }
+    }
+
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;

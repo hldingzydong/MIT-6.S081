@@ -83,7 +83,7 @@ usertrap(void)
           // now only curr proc use this page, could directly use it
           // here just need to add per with W and clear COW
           uint flags = PTE_FLAGS(*pte);
-          flags = flags | (~PTE_COW) | PTE_W;
+          flags = (flags & (~PTE_COW)) | PTE_W;
           updatepageperm(p->pagetable, va, PGSIZE, flags);
         } else {
           // allocate a new page
@@ -91,8 +91,10 @@ usertrap(void)
           if (mem == 0) {
             p->killed = 1;
           } else {
-            memset(mem, 0, PGSIZE);
+            // memset(mem, 0, PGSIZE);
+            // copy old page to new page
             uvmunmap(p->pagetable, va, 1, 1); // uminstall previous map from page table
+            memmove(mem, (char*)pa, PGSIZE);
             if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
               kfree(mem);
               p->killed = 1;
