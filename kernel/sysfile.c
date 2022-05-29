@@ -322,6 +322,39 @@ sys_open(void)
     return -1;
   }
 
+  if(ip->type == T_SYMLINK){
+    if(omode & O_NOFOLLOW){
+      // do nothing for no need to follow this link
+    } else {
+      const int recurthreshold = 10; // once recur exceed recurthreshold, regard error
+      int recur = 0;
+      while (recur < recurthreshold){
+        char target[MAXPATH];
+        if(readi(ip, 0, (uint64)target, 0, MAXPATH) != MAXPATH) {
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+        iunlockput(ip);
+        if((ip = namei(target)) == 0){
+          end_op();
+          return -1;
+        }
+        ilock(ip);
+        if(ip->type != T_SYMLINK)
+          break;
+
+        recur++;
+      }
+      
+      if (recur == recurthreshold){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+    }
+  }
+
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
@@ -488,5 +521,29 @@ sys_pipe(void)
 uint64
 sys_symlink(void)
 {
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *ip;
 
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+  
+  // no need to check if target exist
+
+  // if path already exist, return -1 to indicate failure
+  if((ip = namei(path)) != 0){
+    // panic("symlink: path already exist");
+    return -1;
+  }
+
+  begin_op();
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){
+    end_op();
+    return -1;
+  }
+  if(writei(ip, 0, (uint64)target, 0, MAXPATH) < 0){
+    panic("symlink: write inode fail");
+  }
+  iunlockput(ip);
+  end_op();
+  return 0;
 }
