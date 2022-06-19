@@ -3,6 +3,13 @@
         "__locale": "c",
         "__string": "c",
         "string": "c",
-        "string_view": "c"
+        "string_view": "c",
+        "defs.h": "c",
+        "proc.h": "c",
+        "riscv.h": "c",
+        "vma.h": "c",
+        "types.h": "c",
+        "fcntl.h": "c",
+        "file.h": "c"
     }
 }
