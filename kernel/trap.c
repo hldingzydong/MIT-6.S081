@@ -1,10 +1,14 @@
 #include "types.h"
 #include "param.h"
+#include "fs.h"
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 #include "defs.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -67,6 +71,58 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15){
+    uint64 stval = r_stval();
+    if (stval >= p->sz || stval <= p->trapframe->sp) {
+      p->killed = 1;
+    }
+    else {
+      // lookup vmas
+      struct vma* vma = (struct vma*)0;
+      for(int i = 0; i < VMA_ARR_SIZE; ++i){
+        if((uint64)(p->vmas[i].uvmaddr) <= stval 
+           && (uint64)(p->vmas[i].uvmaddr) + p->vmas[i].length > stval){
+          vma = &(p->vmas[i]);
+          break;
+        }
+      }
+
+      if(!vma){
+        printf("cannot find VMA\n");
+        p->killed = 1;
+      } else {
+        uint64 va = PGROUNDDOWN(stval);
+        char *pa = kalloc();
+        if(pa == 0)
+          panic("kalloc");
+        memset(pa, 0, PGSIZE);
+        int perm = PTE_U;
+        if(vma->prot & PROT_READ){
+          perm |= PTE_R;
+        }
+        if(vma->prot & PROT_WRITE){
+          perm |= PTE_W;
+        }
+        if(vma->prot & PROT_EXEC){
+          perm |= PTE_X;
+        }
+        if(mappages(p->pagetable, va, PGSIZE, (uint64)pa, perm) != 0){
+          kfree(pa);
+          printf("mappages failed\n");
+          p->killed = 1;
+        } else{
+          struct file *f = vma->f;
+          ilock(f->ip);
+          int r = readi(f->ip, 1, va, va - (uint64)(vma->uvmaddr) + vma->offset, PGSIZE);
+          if(r == -1) {
+            kfree(pa);
+            printf("read file failed\n");
+            p->killed = 1;
+          }
+          iunlock(f->ip);
+        }
+      }
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

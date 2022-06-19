@@ -1,3 +1,5 @@
+#include "vma.h"
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -82,6 +84,8 @@ struct trapframe {
 
 enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+#define VMA_ARR_SIZE 16
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -103,4 +107,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  struct vma vmas[VMA_ARR_SIZE];
 };

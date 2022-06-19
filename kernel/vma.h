@@ -1,22 +1,19 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#define VMA_ARR_SIZE 16
-
-#define MAP_FAILED ((char *) -1)
-
 struct vma
 {
     void*        uvmaddr;
     void*        taraddr;
-    size_t      length;
-    int         prot;
-    int         flags;
-    struct file *f;
-    off_t       offset;
+    size_t       length;
+    int          prot;
+    int          flags;
+    struct file  *f;
+    off_t        offset;
+    int          allocated;
 };
 
-void vmainit();
+#define MAP_FAILED ((char *) -1)
 
 void* mmap(void* addr, size_t length, int prot, int flags, struct file *f, off_t offset);
 

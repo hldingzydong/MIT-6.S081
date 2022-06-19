@@ -15,7 +15,6 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
-#include "vma.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -521,6 +520,8 @@ sys_munmap(void)
   {
     return -1;
   }
+
+  munmap((void*)addr, length);
 
   return 0;
 }

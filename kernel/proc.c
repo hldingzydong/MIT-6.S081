@@ -48,6 +48,11 @@ procinit(void)
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
+      // init vmas
+      for(int i = 0; i < VMA_ARR_SIZE; ++i){
+        p->vmas[i].uvmaddr = 0;
+        p->vmas[i].allocated = 0;
+      }
   }
 }
 
@@ -274,6 +279,14 @@ fork(void)
     return -1;
   }
 
+  // copy vmas
+  for(int i = 0; i < VMA_ARR_SIZE; ++i){
+    np->vmas[i] = p->vmas[i];
+    if(np->vmas[i].uvmaddr > 0) {
+      filedup(np->vmas[i].f);
+    }
+  }
+
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -344,6 +357,13 @@ exit(int status)
   if(p == initproc)
     panic("init exiting");
 
+  // mummap vmas before close files
+  for(int i = 0; i < VMA_ARR_SIZE; ++i){
+    if(p->vmas[i].uvmaddr != 0) {
+      munmap((void*)p->vmas[i].uvmaddr, p->vmas[i].length);
+    }
+  }
+
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd]){
@@ -393,7 +413,7 @@ exit(int status)
   p->state = ZOMBIE;
 
   release(&original_parent->lock);
-
+  
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");
