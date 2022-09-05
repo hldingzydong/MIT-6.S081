@@ -96,13 +96,39 @@ int
 e1000_transmit(struct mbuf *m)
 {
   //
-  // Your code here.
-  //
   // the mbuf contains an ethernet frame; program it into
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
   
+  acquire(&e1000_lock);
+  uint32 npacket = regs[E1000_TDT];
+  
+  if (tx_ring[npacket].status != E1000_TXD_STAT_DD)
+  {
+    release(&e1000_lock);
+    return -1;
+  }
+
+  if (tx_mbufs[npacket])
+  {
+    mbuffree(tx_mbufs[npacket]);
+  }
+  
+  // m->head points to the packet's content in memory
+  tx_ring[npacket].addr = (uint64) m->head;
+  // m->len is the packet length
+  tx_ring[npacket].length = m->len;
+  // Clear status
+  tx_ring[npacket].status = 0;
+  // Set the necessary cmd flags (look at Section 3.3 in the E1000 manual)
+  tx_ring[npacket].cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
+  // stash away a pointer to the mbuf for later freeing
+  tx_mbufs[npacket] = m;
+
+  // update the ring position by adding one to E1000_TDT modulo TX_RING_SIZE
+  regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
+  release(&e1000_lock);
   return 0;
 }
 
@@ -110,11 +136,37 @@ static void
 e1000_recv(void)
 {
   //
-  // Your code here.
-  //
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
+  // printf("receive packet!\n");
+
+  // TODO: Fix handle receive packet
+  acquire(&e1000_lock);
+  uint32 npacket = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+
+  if (rx_ring[npacket].status != E1000_RXD_STAT_DD)
+  {
+    release(&e1000_lock);
+    // printf("done received packet!\n");
+    return;
+  }
+  // update the mbuf's m->len to the length reported in the descriptor
+  rx_mbufs[npacket]->len = rx_ring[npacket].length;
+  // Deliver the mbuf to the network stack using net_rx()
+  net_rx(rx_mbufs[npacket]);
+
+  // allocate a new mbuf using mbufalloc() to replace the one just given to net_rx()
+  rx_mbufs[npacket] = mbufalloc(0);
+  if (!rx_mbufs[npacket])
+      panic("e1000");
+  // Program its data pointer (m->head) into the descriptor
+  rx_ring[npacket].addr = (uint64) rx_mbufs[npacket]->head;
+  // Clear the descriptor's status bits to zero
+  rx_ring[npacket].status = 0;
+  // update the E1000_RDT register to be the index of the last ring descriptor processed
+  regs[E1000_RDT] = npacket;
+  release(&e1000_lock);
 }
 
 void
