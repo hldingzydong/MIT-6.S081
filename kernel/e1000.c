@@ -104,7 +104,7 @@ e1000_transmit(struct mbuf *m)
   acquire(&e1000_lock);
   uint32 npacket = regs[E1000_TDT];
   
-  if (tx_ring[npacket].status != E1000_TXD_STAT_DD)
+  if (0 == (tx_ring[npacket].status & E1000_TXD_STAT_DD))
   {
     release(&e1000_lock);
     return -1;
@@ -139,34 +139,31 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
-  // printf("receive packet!\n");
 
-  // TODO: Fix handle receive packet
-  acquire(&e1000_lock);
-  uint32 npacket = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
-
-  if (rx_ring[npacket].status != E1000_RXD_STAT_DD)
+  while (1)
   {
-    release(&e1000_lock);
-    // printf("done received packet!\n");
-    return;
-  }
-  // update the mbuf's m->len to the length reported in the descriptor
-  rx_mbufs[npacket]->len = rx_ring[npacket].length;
-  // Deliver the mbuf to the network stack using net_rx()
-  net_rx(rx_mbufs[npacket]);
+    uint32 npacket = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
 
-  // allocate a new mbuf using mbufalloc() to replace the one just given to net_rx()
-  rx_mbufs[npacket] = mbufalloc(0);
-  if (!rx_mbufs[npacket])
+    if (0 == (rx_ring[npacket].status & E1000_RXD_STAT_DD))
+    {
+      return;
+    } 
+    // update the mbuf's m->len to the length reported in the descriptor
+    rx_mbufs[npacket]->len = rx_ring[npacket].length;
+    // Deliver the mbuf to the network stack using net_rx()
+    net_rx(rx_mbufs[npacket]);
+
+    // allocate a new mbuf using mbufalloc() to replace the one just given to net_rx()
+    rx_mbufs[npacket] = mbufalloc(0);
+    if (!rx_mbufs[npacket])
       panic("e1000");
-  // Program its data pointer (m->head) into the descriptor
-  rx_ring[npacket].addr = (uint64) rx_mbufs[npacket]->head;
-  // Clear the descriptor's status bits to zero
-  rx_ring[npacket].status = 0;
-  // update the E1000_RDT register to be the index of the last ring descriptor processed
-  regs[E1000_RDT] = npacket;
-  release(&e1000_lock);
+    // Program its data pointer (m->head) into the descriptor
+    rx_ring[npacket].addr = (uint64) rx_mbufs[npacket]->head;
+    // Clear the descriptor's status bits to zero
+    rx_ring[npacket].status = 0;
+    // update the E1000_RDT register to be the index of the last ring descriptor processed
+    regs[E1000_RDT] = npacket;
+  }
 }
 
 void
